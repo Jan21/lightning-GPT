@@ -7,14 +7,12 @@ from lightning import LightningModule
 from lightning.pytorch.strategies.deepspeed import _DEEPSPEED_AVAILABLE
 from lightning_utilities.core.overrides import is_overridden
 
-import mingpt.model
-import mingpt.trainer
 import nanogpt.model
-from mingpt.utils import CfgNode
 
 MINGPT_PRESETS = {
     # names follow the huggingface naming conventions
     # GPT-1
+    "gptsmall": dict(n_layer=1, n_head=2, n_embd=128),  # 117M params
     "openai-gpt": dict(n_layer=12, n_head=12, n_embd=768),  # 117M params
     # GPT-2 configs
     "gpt2": dict(n_layer=12, n_head=12, n_embd=768),  # 124M params
@@ -34,88 +32,95 @@ MINGPT_PRESETS = {
 }
 
 
-class MinGPT(LightningModule):
-    mingpt: mingpt.model.GPT
+class CfgNode:
+    """ a lightweight configuration class inspired by yacs """
+    # TODO: convert to subclass from a dict like in yacs?
+    # TODO: implement freezing to prevent shooting of own foot
+    # TODO: additional existence/override checks when reading/writing params?
 
-    def __init__(
-        self,
-        vocab_size: int,
-        block_size: int,
-        model_type: Optional[str] = "gpt2",
-        n_layer: Optional[int] = None,
-        n_head: Optional[int] = None,
-        n_embd: Optional[int] = None,
-        embd_pdrop: float = 0.1,
-        resid_pdrop: float = 0.1,
-        attn_pdrop: float = 0.1,
-        weight_decay: float = 0.1,
-        learning_rate: float = 3e-4,
-        betas: Tuple[float, float] = (0.9, 0.95),
-    ) -> None:
-        super().__init__()
-        self.save_hyperparameters()
-        self.build_mingpt_configs()
-        if not is_overridden("configure_sharded_model", self, LightningModule):
-            self.mingpt = mingpt.model.GPT(self.mingpt_config)
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
 
-    def build_mingpt_configs(self) -> None:
-        params = [
-            self.hparams.n_layer,
-            self.hparams.n_head,
-            self.hparams.n_embd,
-        ]
+    def __str__(self):
+        return self._str_helper(0)
 
-        params_given = all([el is not None for el in params])
-        some_params_given = any([el is not None for el in params])
+    def _str_helper(self, indent):
+        """ need to have a helper to support nested indentation for pretty printing """
+        parts = []
+        for k, v in self.__dict__.items():
+            if isinstance(v, CfgNode):
+                parts.append("%s:\n" % k)
+                parts.append(v._str_helper(indent + 1))
+            else:
+                parts.append("%s: %s\n" % (k, v))
+        parts = [' ' * (indent * 4) + p for p in parts]
+        return "".join(parts)
 
-        if some_params_given and not params_given:
-            raise ValueError(
-                "Please provide all values for n_layer, n_head, and n_embd, or just model_type."
-                f"Got n_layer={self.hparams.n_layer}, n_head={self.hparams.n_head}, "
-                f"and n_embd={self.hparams.n_embd}."
-            )
+    def to_dict(self):
+        """ return a dict representation of the config """
+        return { k: v.to_dict() if isinstance(v, CfgNode) else v for k, v in self.__dict__.items() }
 
-        if not params_given:
-            # We take ownership of presets over minGPT here
-            preset = MINGPT_PRESETS[self.hparams.model_type]
-            self.hparams.update(preset)
-            self.hparams.model_type = None
+    def merge_from_dict(self, d):
+        self.__dict__.update(d)
 
-        self.mingpt_config = mingpt.model.GPT.get_default_config()
-        self.merge_with_hparams(self.mingpt_config)
+    def merge_from_args(self, args):
+        """
+        update the configuration from a list of strings that is expected
+        to come from the command line, i.e. sys.argv[1:].
 
-        self.mingpt_trainer_config = mingpt.trainer.Trainer.get_default_config()
-        self.merge_with_hparams(self.mingpt_trainer_config)
+        The arguments are expected to be in the form of `--arg=value`, and
+        the arg can use . to denote nested sub-attributes. Example:
 
-    def merge_with_hparams(self, config: CfgNode) -> None:
-        keys = set(config.to_dict().keys())
-        hparams = {k: v for k, v in self.hparams.items() if k in keys}
-        config.merge_from_dict(hparams)
+        --model.n_layer=10 --trainer.batch_size=32
+        """
+        for arg in args:
 
-    def forward(
-        self, idx: torch.Tensor, targets: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-        return self.mingpt(idx, targets)
+            keyval = arg.split('=')
+            assert len(keyval) == 2, "expecting each override arg to be of form --arg=value, got %s" % arg
+            key, val = keyval # unpack
 
-    def configure_optimizers(self) -> torch.optim.Optimizer:
-        return self.mingpt.configure_optimizers(self.mingpt_trainer_config)
+            # first translate val into a python object
+            try:
+                val = literal_eval(val)
+                """
+                need some explanation here.
+                - if val is simply a string, literal_eval will throw a ValueError
+                - if val represents a thing (like an 3, 3.14, [1,2,3], False, None, etc.) it will get created
+                """
+            except ValueError:
+                pass
 
-    def training_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> torch.Tensor:
-        idx, targets = batch
-        _, loss = self(idx, targets)
-        self.log("train_loss", loss)
-        return loss
+            # find the appropriate object to insert the attribute into
+            assert key[:2] == '--'
+            key = key[2:] # strip the '--'
+            keys = key.split('.')
+            obj = self
+            for k in keys[:-1]:
+                obj = getattr(obj, k)
+            leaf_key = keys[-1]
 
-    def generate(
-        self,
-        idx: torch.Tensor,
-        max_new_tokens: int,
-        temperature: float = 1.0,
-        do_sample: bool = False,
-        top_k: Optional[int] = None,
-    ) -> torch.Tensor:
-        return self.mingpt.generate(idx, max_new_tokens, temperature, do_sample, top_k)
+            # ensure that this attribute exists
+            assert hasattr(obj, leaf_key), f"{key} is not an attribute that exists in the config"
 
+            # overwrite the attribute
+            print("command line overwriting config attribute %s with %s" % (key, val))
+            setattr(obj, leaf_key, val)
+
+
+def get_default_config():
+        C = CfgNode()
+        # device to train on
+        C.device = 'auto'
+        # dataloder parameters
+        C.num_workers = 4
+        # optimizer parameters
+        C.max_iters = None
+        C.batch_size = 64
+        C.learning_rate = 3e-4
+        C.betas = (0.9, 0.95)
+        C.weight_decay = 0.1 # only applied on matmul weights
+        C.grad_norm_clip = 1.0
+        return C
 
 class NanoGPT(LightningModule):
     nanogpt: nanogpt.model.GPT
@@ -166,7 +171,7 @@ class NanoGPT(LightningModule):
         self.nanogpt_config = nanogpt.model.GPTConfig()
         self.merge_with_hparams(self.nanogpt_config)
 
-        self.nanogpt_trainer_config = mingpt.trainer.Trainer.get_default_config()
+        self.nanogpt_trainer_config = get_default_config()
         self.merge_with_hparams(self.nanogpt_trainer_config)
 
     def merge_with_hparams(self, config: CfgNode) -> None:
@@ -197,45 +202,6 @@ class NanoGPT(LightningModule):
         return self.nanogpt.generate(idx, max_new_tokens, temperature, top_k)
 
 
-class DeepSpeedMinGPT(MinGPT):
-    # TODO: activation checkpointing (requires overriding forward)
-    def __init__(self, fused_adam: bool = True, offload: bool = False, **kwargs: Any):
-        if fused_adam and offload:
-            raise RuntimeError(
-                "Cannot use FusedAdam and CPUAdam at the same time! "
-                "Please set either `fused_adam` or `offload` to False."
-            )
-
-        super().__init__(**kwargs)
-        self.save_hyperparameters()
-
-    def configure_optimizers(self) -> torch.optim.Optimizer:
-        optimizer = super().configure_optimizers()
-        return _get_deepspeed_optimizer(
-            optimizer,
-            fused_adam=self.hparams.fused_adam,
-            cpu_offload=self.hparams.offload,
-            learning_rate=self.hparams.learning_rate,
-            betas=self.hparams.betas,
-        )
-
-    def configure_sharded_model(self) -> None:
-        self.mingpt = mingpt.model.GPT(self.mingpt_config)
-
-
-class FSDPMinGPT(MinGPT):
-    def __init__(self, **kwargs: Any):
-        super().__init__(**kwargs)
-        self.save_hyperparameters()
-        _register_gpt_strategy()
-
-    def configure_optimizers(self) -> torch.optim.AdamW:
-        return _get_fsdp_optimizers(
-            self.trainer.model,
-            weight_decay=self.mingpt_trainer_config.weight_decay,
-            learning_rate=self.mingpt_trainer_config.learning_rate,
-            betas=self.mingpt_trainer_config.betas,
-        )
 
 
 class DeepSpeedNanoGPT(NanoGPT):
@@ -267,46 +233,6 @@ class DeepSpeedNanoGPT(NanoGPT):
         self.nanogpt = nanogpt.model.GPT(self.nanogpt_config)
 
 
-class FSDPNanoGPT(NanoGPT):
-    def __init__(self, **kwargs: Any):
-        super().__init__(**kwargs)
-        self.save_hyperparameters()
-        _register_gpt_strategy()
-
-    def configure_optimizers(self) -> torch.optim.AdamW:
-        return _get_fsdp_optimizers(
-            self.trainer.model,
-            weight_decay=self.nanogpt_trainer_config.weight_decay,
-            learning_rate=self.nanogpt_trainer_config.learning_rate,
-            betas=self.nanogpt_trainer_config.betas,
-        )
-
-
-def _register_gpt_strategy() -> None:
-    from lightning.pytorch.strategies import StrategyRegistry
-    from lightning.pytorch.strategies.fully_sharded_native import (
-        DDPFullyShardedNativeStrategy,
-    )
-    from torch.distributed.fsdp import BackwardPrefetch
-    from torch.distributed.fsdp.wrap import transformer_auto_wrap_policy
-
-    if "fsdp-gpt" in StrategyRegistry.available_strategies():
-        return
-
-    auto_wrap_policy = functools.partial(
-        transformer_auto_wrap_policy, transformer_layer_cls={nanogpt.model.Block, mingpt.model.Block}
-    )
-
-    StrategyRegistry.register(
-        name="fsdp-gpt",
-        strategy=DDPFullyShardedNativeStrategy,
-        description="FSDP strategy with memory optimizations enabled for GPT large scale pretraining.",
-        auto_wrap_policy=auto_wrap_policy,
-        activation_checkpointing=[nanogpt.model.Block, mingpt.model.Block],
-        backward_prefetch=BackwardPrefetch.BACKWARD_PRE,
-    )
-
-
 def _get_deepspeed_optimizer(
     optimizer: torch.optim.Optimizer,
     cpu_offload: bool,
@@ -333,10 +259,3 @@ def _get_deepspeed_optimizer(
         )
 
     return optimizer
-
-
-def _get_fsdp_optimizers(
-    model: torch.nn.Module, learning_rate: float, weight_decay: float, betas: Tuple[float, float]
-) -> torch.optim.AdamW:
-    # fsdp only supports a single parameter group and requires the parameters from the already wrapped model
-    return torch.optim.AdamW(model.parameters(), lr=learning_rate, betas=betas, weight_decay=weight_decay)

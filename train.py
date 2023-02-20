@@ -9,32 +9,16 @@ from lightning_gpt import callbacks, data, models
 
 
 def main(args):
-    with urlopen("https://cs.stanford.edu/people/karpathy/char-rnn/shakespeare_input.txt") as f:
-        text = f.read()
-
-    train_dataset = data.CharDataset(text, args.block_size)
+    train_file = 'temp/train.bin'
+    train_dataset = data.cc_czech_Dataset(train_file, args.block_size)
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers)
 
-    GPT_class = None
     extra_kwargs = {}
 
-    if args.implementation == "mingpt":
-        GPT_class = models.MinGPT
-        extra_kwargs.update(
-            dict(
-                embd_pdrop=0.1,
-                resid_pdrop=0.1,
-                attn_pdrop=0.1,
-            )
-        )
+    GPT_class = models.NanoGPT
+    extra_kwargs["dropout"] = 0.1
 
-    elif args.implementation == "nanogpt":
-        GPT_class = models.NanoGPT
-        extra_kwargs["dropout"] = 0.1
-
-    else:
-        raise ValueError(f"Unsupported implementation {args.implementation}")
 
     if args.strategy == "deepspeed":
         if GPT_class == models.MinGPT:
@@ -44,14 +28,6 @@ def main(args):
         else:
             raise ValueError(f"Implementation {args.implementation} not supported with DeepSpeed")
         extra_kwargs["offload"] = False
-
-    elif args.strategy == "fsdp_native":
-        if GPT_class == models.MinGPT:
-            GPT_class = models.FSDPMinGPT
-        elif GPT_class == models.NanoGPT:
-            GPT_class = models.FSDPNanoGPT
-        else:
-            raise ValueError(f"Implementation {args.implementation} not supported with FSDP")
 
     model = GPT_class(
         vocab_size=train_dataset.vocab_size,
@@ -92,7 +68,7 @@ def main(args):
 
     trainer.fit(model, train_loader)
 
-    context = "Friends of my soul"  # Prime with something
+    context = "Prezident české republiky bude"  # Prime with something
     x = train_dataset.to_tokens(context, model.device)
     y = model.generate(x, max_new_tokens=1000, temperature=1.0, do_sample=True, top_k=10)
     print(train_dataset.from_tokens(y))
@@ -104,7 +80,7 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser = L.Trainer.add_argparse_args(parser)
 
-    parser.add_argument("--model_type", default="gpt2", type=str)
+    parser.add_argument("--model_type", default="gptsmall", type=str)
     parser.add_argument("--n_layer", type=int)
     parser.add_argument("--n_head", type=int)
     parser.add_argument("--n_embd", type=int)
@@ -113,7 +89,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch_size", default=64, type=int)
     parser.add_argument("--num_workers", default=4, type=int)
     parser.add_argument("--compile", default=None, choices=[None, "dynamo"])
-    parser.add_argument("--implementation", default="mingpt", choices=["mingpt", "nanogpt"])
+    parser.add_argument("--implementation", default="nanogpt", choices=["nanogpt"])
     args = parser.parse_args()
 
     main(args)
