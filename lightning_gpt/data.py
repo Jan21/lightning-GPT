@@ -49,10 +49,9 @@ class CharDataset(Dataset):
         return "".join([self.itos[int(i)] for i in tokens])
 
 class cc_czech_Dataset(Dataset):
-    def __init__(self, data: str, block_size: int):
-
-        self.tokenizer = Tokenizer.from_file("temp/tokenizerBPE.json")
-        data = np.memmap(data, dtype=np.uint16, mode='r')
+    def __init__(self, data: str, block_size: int, tokenizer_str: str):
+        self.tokenizer = Tokenizer.from_file(tokenizer_str)
+        data = np.memmap(data, dtype=np.uint32, mode='r')
         data_size, vocab_size = len(data), self.tokenizer.get_vocab_size()
         rank_zero_info("data has %d characters, %d unique." % (data_size, vocab_size))
         self.block_size = block_size

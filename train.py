@@ -9,10 +9,16 @@ from lightning_gpt import callbacks, data, models
 
 
 def main(args):
-    train_file = 'temp/train.bin'
-    train_dataset = data.cc_czech_Dataset(train_file, args.block_size)
+    train_file = 'temp/cc/nov_dec_2022/train.bin'
+    test_file = 'temp/cc/nov_dec_2022/val.bin'
+    tokenizer_file = "temp/cc/nov_dec_2022/tokenizerWL.json"
+
+    train_dataset = data.cc_czech_Dataset(train_file, args.block_size,tokenizer_file)
+    test_dataset = data.cc_czech_Dataset(test_file, args.block_size,tokenizer_file)
+    
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers)
+    test_loader = DataLoader(test_dataset, batch_size=args.batch_size, num_workers=args.num_workers,shuffle=False)
 
     extra_kwargs = {}
 
@@ -31,6 +37,7 @@ def main(args):
 
     model = GPT_class(
         vocab_size=train_dataset.vocab_size,
+        #vocab_size=50257,
         block_size=train_dataset.block_size,
         model_type=args.model_type,
         n_layer=args.n_layer,
@@ -58,20 +65,21 @@ def main(args):
 
     trainer = L.Trainer.from_argparse_args(
         args,
-        max_epochs=10,
+        max_epochs=400,
         gradient_clip_val=1.0,
         callbacks=callback_list,
         accelerator="auto",
-        devices="auto",
+        devices=[0,2],
+        strategy='ddp',
         precision=16,
     )
 
-    trainer.fit(model, train_loader)
+    trainer.fit(model, train_loader, test_loader)
 
-    context = "Prezident české republiky bude"  # Prime with something
-    x = train_dataset.to_tokens(context, model.device)
-    y = model.generate(x, max_new_tokens=1000, temperature=1.0, do_sample=True, top_k=10)
-    print(train_dataset.from_tokens(y))
+    #context = "Prezident české republiky bude"  # Prime with something
+    #x = train_dataset.to_tokens(context, model.device)
+    #y = model.generate(x, max_new_tokens=1000, temperature=1.0, do_sample=True, top_k=10)
+    #print(train_dataset.from_tokens(y))
 
 
 if __name__ == "__main__":

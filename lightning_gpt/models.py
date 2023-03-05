@@ -12,13 +12,13 @@ import nanogpt.model
 MINGPT_PRESETS = {
     # names follow the huggingface naming conventions
     # GPT-1
-    "gptsmall": dict(n_layer=1, n_head=2, n_embd=128),  # 117M params
+    "gptsmall": dict(n_layer=9, n_head=8, n_embd=512),  # 117M params
     "openai-gpt": dict(n_layer=12, n_head=12, n_embd=768),  # 117M params
     # GPT-2 configs
     "gpt2": dict(n_layer=12, n_head=12, n_embd=768),  # 124M params
     "gpt2-medium": dict(n_layer=24, n_head=16, n_embd=1024),  # 350M params
     "gpt2-large": dict(n_layer=36, n_head=20, n_embd=1280),  # 774M params
-    "gpt2-xl": dict(n_layer=48, n_head=25, n_embd=1600),  # 1558M params
+    "gpt2-xl": dict(n_layer=48, n_head=25, n_embd=1601),  # 1558M params
     "gpt2-xxl": dict(n_layer=96, n_head=25, n_embd=1600),  # 2951M params
     "gpt2-xxxl": dict(n_layer=100, n_head=30, n_embd=1920),  # 4426M params
     "gpt2-4xl": dict(n_layer=190, n_head=30, n_embd=1920),  # 8409M params
@@ -195,6 +195,12 @@ class NanoGPT(LightningModule):
         _, loss = self(idx, targets)
         self.log("train_loss", loss)
         return loss
+    
+    def validation_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:
+        idx, targets = batch
+        _, loss1 = self(idx, targets)
+        self.log("validation_loss", loss1,prog_bar=True)
+        return loss1
 
     def generate(
         self, idx: torch.Tensor, max_new_tokens: int, temperature: float = 1.0, top_k: Optional[int] = None
