@@ -4,7 +4,7 @@ import torch
 
 import mingpt
 import nanogpt
-from lightning_gpt import models
+from lightning_gpt import gpt_models
 
 
 def test_mingpt_vs_lightning_mingpt():
@@ -21,7 +21,7 @@ def test_mingpt_vs_lightning_mingpt():
 
     mingpt_model = mingpt.model.GPT(mingpt_config)
 
-    lit_model = models.MinGPT(vocab_size=vocab_size, block_size=block_size, model_type=model_type)
+    lit_model = gpt_models.MinGPT(vocab_size=vocab_size, block_size=block_size, model_type=model_type)
 
     for target_param, param in zip(lit_model.parameters(), mingpt_model.parameters()):
         target_param.data.copy_(param.data)
@@ -42,14 +42,14 @@ def test_nanogpt_vs_lightning_nanogpt():
 
     x = torch.randint(0, vocab_size, (1, 12))
 
-    nanogpt_config = nanogpt.model.GPTConfig(**models.MINGPT_PRESETS[model_type])
+    nanogpt_config = nanogpt.model.GPTConfig(**gpt_models.MINGPT_PRESETS[model_type])
     nanogpt_config.vocab_size = vocab_size
     nanogpt_config.block_size = block_size
     nanogpt_config.model_type = model_type
 
     nanogpt_model = nanogpt.model.GPT(nanogpt_config)
 
-    lit_model = models.NanoGPT(vocab_size=vocab_size, block_size=block_size, model_type=model_type)
+    lit_model = gpt_models.NanoGPT(vocab_size=vocab_size, block_size=block_size, model_type=model_type)
 
     for target_param, param in zip(lit_model.parameters(), nanogpt_model.parameters()):
         target_param.data.copy_(param.data)
@@ -75,12 +75,12 @@ def _get_minimal_gpt_config():
 @pytest.mark.parametrize(
     "model_cls",
     [
-        models.MinGPT,
-        models.DeepSpeedMinGPT,
-        models.FSDPMinGPT,
-        models.NanoGPT,
-        models.DeepSpeedNanoGPT,
-        models.FSDPNanoGPT,
+        gpt_models.MinGPT,
+        gpt_models.DeepSpeedMinGPT,
+        gpt_models.FSDPMinGPT,
+        gpt_models.NanoGPT,
+        gpt_models.DeepSpeedNanoGPT,
+        gpt_models.FSDPNanoGPT,
     ],
 )
 def test_model_instatiation_base_strategy(tmpdir, model_cls):
@@ -101,7 +101,7 @@ def test_model_instatiation_base_strategy(tmpdir, model_cls):
     trainer.fit(mingpt, dataloader_train)
 
 
-@pytest.mark.parametrize("model_cls", [models.DeepSpeedMinGPT, models.DeepSpeedNanoGPT])
+@pytest.mark.parametrize("model_cls", [gpt_models.DeepSpeedMinGPT, gpt_models.DeepSpeedNanoGPT])
 def test_model_instantiation_error_deepspeed(model_cls):
     with pytest.raises(
         RuntimeError,

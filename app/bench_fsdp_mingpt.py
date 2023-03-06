@@ -9,7 +9,7 @@ if TYPE_CHECKING:
 import torch
 from torch.utils.data import DataLoader
 
-from lightning_gpt import bench, data, models
+from lightning_gpt import bench, data, gpt_models
 
 
 class FSDPMinGPTBench(bench.Bench):
@@ -22,7 +22,7 @@ class FSDPMinGPTBench(bench.Bench):
         self.model_type = "gpt2"
         self.num_runs = 5
 
-    def create(self) -> Tuple[models.FSDPMinGPT, DataLoader]:
+    def create(self) -> Tuple[gpt_models.FSDPMinGPT, DataLoader]:
         torch.set_float32_matmul_precision("high")
 
         with urlopen("https://cs.stanford.edu/people/karpathy/char-rnn/shakespeare_input.txt") as f:
@@ -31,7 +31,7 @@ class FSDPMinGPTBench(bench.Bench):
         dataset = data.CharDataset(text, block_size=128)
         dataloader = DataLoader(dataset, batch_size=self.batch_size, num_workers=self.num_workers)
 
-        model = models.FSDPMinGPT(
+        model = gpt_models.FSDPMinGPT(
             vocab_size=dataset.vocab_size,
             block_size=dataset.block_size,
             model_type=self.model_type,

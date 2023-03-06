@@ -10,7 +10,7 @@ import torch
 import torch._dynamo
 from torch.utils.data import DataLoader
 
-from lightning_gpt import bench, data, models
+from lightning_gpt import bench, data, gpt_models
 
 
 class GPTBench(bench.Bench):
@@ -23,7 +23,7 @@ class GPTBench(bench.Bench):
         self.model_type = "gpt-micro"
         self.num_runs = 2
 
-    def create(self) -> Tuple[models.MinGPT, torch.utils.data.DataLoader]:
+    def create(self) -> Tuple[gpt_models.MinGPT, torch.utils.data.DataLoader]:
         torch.set_float32_matmul_precision("high")
         torch._dynamo.config.suppress_errors = True
 
@@ -33,7 +33,7 @@ class GPTBench(bench.Bench):
         dataset = data.CharDataset(text, block_size=128)
         dataloader = DataLoader(dataset, batch_size=self.batch_size, num_workers=self.num_workers)
 
-        model = models.MinGPT(
+        model = gpt_models.MinGPT(
             vocab_size=dataset.vocab_size,
             block_size=dataset.block_size,
             model_type=self.model_type,

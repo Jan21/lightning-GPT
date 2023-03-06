@@ -51,8 +51,13 @@ class CharDataset(Dataset):
 class cc_czech_Dataset(Dataset):
     def __init__(self, data: str, block_size: int, tokenizer_str: str):
         self.tokenizer = Tokenizer.from_file(tokenizer_str)
-        data = np.memmap(data, dtype=np.uint32, mode='r')
-        data_size, vocab_size = len(data), self.tokenizer.get_vocab_size()
+        vocab_size = self.tokenizer.get_vocab_size()
+        if vocab_size > 60000:
+            dtype=np.uint32
+        else:
+            dtype=np.uint16
+        data = np.memmap(data, dtype=dtype, mode='r')
+        data_size = len(data)
         rank_zero_info("data has %d characters, %d unique." % (data_size, vocab_size))
         self.block_size = block_size
         self.vocab_size = vocab_size
