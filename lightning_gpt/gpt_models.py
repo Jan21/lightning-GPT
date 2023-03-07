@@ -12,7 +12,7 @@ import nanogpt.model
 MINGPT_PRESETS = {
     # names follow the huggingface naming conventions
     # GPT-1
-    "gptsmall": dict(n_layer=9, n_head=8, n_embd=512),  # 117M params
+    "gptsmall": dict(n_layer=8, n_head=8, n_embd=768),  # 117M params
     "openai-gpt": dict(n_layer=12, n_head=12, n_embd=768),  # 117M params
     # GPT-2 configs
     "gpt2": dict(n_layer=12, n_head=12, n_embd=768),  # 124M params
