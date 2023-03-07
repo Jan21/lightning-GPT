@@ -6,7 +6,7 @@ import torch.optim.lr_scheduler as lr_scheduler
 class LSTM(LightningModule):
     """Stacked LSTM"""
 
-    def __init__(self, rnn_type, ntoken, ninp, nhid, nlayers, batch_size, lr, wdecay, optimizer, dropout=0.5, tie_weights=False):
+    def __init__(self, rnn_type, ntoken, ninp, nhid, nlayers, batch_size, lr, wdecay, optimizer, dropout=0.5, tie_weights=False, device = 'cuda'):
         super(LSTM, self).__init__()
         self.drop = nn.Dropout(dropout)
         self.lr = lr
@@ -37,7 +37,7 @@ class LSTM(LightningModule):
         self.ntokens = ntoken
         self.criterion = nn.CrossEntropyLoss()
         self.save_hyperparameters()
-        self.hidden = self.init_hidden(batch_size)
+        self.hidden = self.init_hidden(batch_size,device)
 
     def init_weights(self):
         initrange = 0.1
@@ -45,13 +45,13 @@ class LSTM(LightningModule):
         self.decoder.bias.data.zero_()
         self.decoder.weight.data.uniform_(-initrange, initrange)
 
-    def init_hidden(self, bsz):
+    def init_hidden(self, bsz,device):
         weight = next(self.parameters())
         if self.rnn_type == 'LSTM':
-            return (weight.new_zeros(self.nlayers, bsz, self.nhid),
-                    weight.new_zeros(self.nlayers, bsz, self.nhid))
+            return (weight.new_zeros(self.nlayers, bsz, self.nhid).to(device),
+                    weight.new_zeros(self.nlayers, bsz, self.nhid).to(device))
         else:
-            return weight.new_zeros(self.nlayers, bsz, self.nhid)
+            return weight.new_zeros(self.nlayers, bsz, self.nhid).to(device)
         
     def repackage_hidden(self,h):
         """Wraps hidden states in new Tensors, to detach them from their history."""
@@ -62,13 +62,14 @@ class LSTM(LightningModule):
             return tuple(self.repackage_hidden(v) for v in h)
 
     def forward(self, input, targets):
+        input = input.T.contiguous()
         hidden = self.repackage_hidden(self.hidden)
         emb = self.drop(self.encoder(input))
         output, hidden = self.rnn(emb, hidden)
         output = self.drop(output)
         decoded = self.decoder(output.view(output.size(0) * output.size(1), output.size(2)))
-        output = decoded.view(output.size(0), output.size(1), decoded.size(1))
-        loss = self.criterion(output.view(-1, self.ntokens), targets)
+        output = decoded.view(output.size(0), output.size(1), -1)
+        loss = self.criterion(output.view(-1, self.ntokens), targets.view(-1))
         return output, loss
     
     def training_step(self, batch: torch.Tensor, batch_idx: int) -> torch.Tensor:

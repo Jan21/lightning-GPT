@@ -96,15 +96,15 @@ def main(args):
         torch.set_float32_matmul_precision("high")
         callback_list.append(callbacks.CUDAMetricsCallback())
 
-    wandb_logger = WandbLogger(project="cz_CC")
+    wandb_logger = WandbLogger(project=args.project_name, name=args.model_type)
     trainer = L.Trainer.from_argparse_args(
         args,
-        max_epochs=400,
+        max_epochs=args.max_epochs,
         gradient_clip_val=1.0,
         callbacks=callback_list,
         accelerator="auto",
         logger=wandb_logger,
-        devices=[0],
+        devices=args.devices,
         strategy='ddp',
         precision=16,
     )
@@ -117,7 +117,7 @@ if __name__ == "__main__":
 
     parser = ArgumentParser()
     parser = L.Trainer.add_argparse_args(parser)
-
+    parser.add_argument("--project_name", type=str)
     parser.add_argument("--model_type", default="gptsmall", type=str)
     parser.add_argument("--data_folder", default="temp/cc/nov_dec_50M", type=str)
     parser.add_argument("--tokenizer_type", default="BPE", type=str)
@@ -126,11 +126,11 @@ if __name__ == "__main__":
     parser.add_argument("--n_embd", type=int)
     parser.add_argument("--n_hidden", type=int)
     parser.add_argument("--tied", type=bool)
-    parser.add_argument("--learning_rate", default=3e-4, type=float)
+    parser.add_argument("--learning_rate", default=20, type=float)
     parser.add_argument("--wdecay", default=1.2e-6, type=float)
     parser.add_argument("--optimizer", default="sgd", choices=["sgd", "adam"])
     parser.add_argument("--block_size", default=128, type=int)
-    parser.add_argument("--batch_size", default=64, type=int)
+    parser.add_argument("--batch_size", default=2, type=int)
     parser.add_argument("--num_workers", default=4, type=int)
     parser.add_argument("--compile", default=None, choices=[None, "dynamo"])
     parser.add_argument("--implementation", default="nanogpt", choices=["nanogpt"])
