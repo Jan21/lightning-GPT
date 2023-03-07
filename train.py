@@ -96,7 +96,7 @@ def main(args):
         torch.set_float32_matmul_precision("high")
         callback_list.append(callbacks.CUDAMetricsCallback())
 
-    wandb_logger = WandbLogger(project=args.project_name, name=args.model_type)
+    wandb_logger = WandbLogger(project=args.project_name, name=args.data_folder, save_dir=args.data_folder)
     trainer = L.Trainer.from_argparse_args(
         args,
         max_epochs=args.max_epochs,
@@ -117,9 +117,9 @@ if __name__ == "__main__":
 
     parser = ArgumentParser()
     parser = L.Trainer.add_argparse_args(parser)
-    parser.add_argument("--project_name", type=str)
+    parser.add_argument("--project_name", default='cc', type=str)
     parser.add_argument("--model_type", default="gptsmall", type=str)
-    parser.add_argument("--data_folder", default="temp/cc/nov_dec_50M", type=str)
+    parser.add_argument("--data_folder", type=str)
     parser.add_argument("--tokenizer_type", default="BPE", type=str)
     parser.add_argument("--n_layer", type=int)
     parser.add_argument("--n_head", type=int)
@@ -130,7 +130,7 @@ if __name__ == "__main__":
     parser.add_argument("--wdecay", default=1.2e-6, type=float)
     parser.add_argument("--optimizer", default="sgd", choices=["sgd", "adam"])
     parser.add_argument("--block_size", default=128, type=int)
-    parser.add_argument("--batch_size", default=32, type=int)
+    parser.add_argument("--batch_size", default=64, type=int)
     parser.add_argument("--num_workers", default=4, type=int)
     parser.add_argument("--compile", default=None, choices=[None, "dynamo"])
     parser.add_argument("--implementation", default="nanogpt", choices=["nanogpt"])
